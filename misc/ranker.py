@@ -8,16 +8,19 @@ import random
 import argparse
 import PIL.Image
 from training.misc import adjust_dynamic_range
+import legacy
+import torch
+import os
 
 
 def preprocess(file_path):
-    # print(file_path)
+    print(file_path)
     img = np.asarray(PIL.Image.open(file_path))
-
+    # print(img)
     # Preprocessing from dataset_tool.create_from_images
-    img = img.transpose([2, 0, 1])  # HWC => CHW
+    # img = img.transpose([2, 0, 1])  # HWC => CHW
     # img = np.expand_dims(img, axis=0)
-    img = img.reshape((1, 3, 512, 512))
+    img = img.reshape((1, 3, 256, 256))
 
     # Preprocessing from training_loop.process_reals
     img = adjust_dynamic_range(data=img, drange_in=[0, 255], drange_out=[-1.0, 1.0])
@@ -27,13 +30,14 @@ def preprocess(file_path):
 def main(args):
     random.seed(args.random_seed)
     minibatch_size = args.minibatch_size
-    input_shape = (minibatch_size, 3, 512, 512)
+    input_shape = (minibatch_size, 3, 256, 256)
     # print(args.images)
-    images = args.images
+    images = [os.path.join(args.images, filep) for filep in os.listdir(args.images)] 
     images.sort()
 
     tflib.init_tf()
-    _G, D, _Gs = pickle.load(open(args.model, "rb"))
+    device = torch.device('cuda')
+    D = legacy.load_network_pkl(open(args.model, "rb"))['D'].to(device)
     # D.print_layers()
 
     image_score_all = [(image, []) for image in images]
@@ -57,7 +61,7 @@ def main(args):
                 images_minibatch.append(image)
                 img = preprocess(image)
                 input_minibatch[i, :] = img
-            output = D.run(input_minibatch, None, resolution=512)
+            output = D.run(input_minibatch, None, resolution=256)
             print('shuffle: {}, indices: {}, images: {}'
                   .format(i_shuffle, idx_img_minibatch, images_minibatch))
             print('Output: {}'.format(output))
@@ -76,7 +80,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, required=True,
                         help='.pkl model')
-    parser.add_argument('--images', nargs='+')
+    parser.add_argument('--images', type=str)
     parser.add_argument('--output', type=str, default='rank.txt')
     parser.add_argument('--minibatch_size', type=int, default=4)
     parser.add_argument('--num_shuffles', type=int, default=5)
